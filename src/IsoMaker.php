@@ -41,7 +41,7 @@ abstract class IsoMaker
 	public function __construct(IOperatingSystem $os, array $options = [])
 	{
 		$this->os = $os;
-		$this->options = $options;
+		$this->options = array_replace_recursive($this->options, $options);
 		$this->orignalISO = $this->getIsoFile();
 	}
 
@@ -79,9 +79,9 @@ abstract class IsoMaker
 	 * @abstract
 	 * @param ICustomization $customization
 	 * @param DirectoryIterator $directory
-	 * @return SplFileObject[] of ISO files
+	 * @return void
 	 */
-	abstract protected function applyCustomization(ICustomization $customization, DirectoryIterator $directory): array;
+	abstract protected function applyCustomization(ICustomization $customization, DirectoryIterator $directory): void;
 
 	/**
 	 * Extract files from ISO to anthor working directory.
@@ -98,6 +98,7 @@ abstract class IsoMaker
 
 		} while(is_dir($dirPath));
 
+		mkdir($dirPath, 0777, true);
 		$repo = new DirectoryIterator($dirPath);
 
 		$this->insureCommand("7z");
