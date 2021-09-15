@@ -167,7 +167,7 @@ abstract class Network {
 
 	abstract public function getNetmaskAddress(): string;
 
-	abstract public function setNestmaskAddress(string $netmask): void;
+	abstract public function setNetmaskAddress(string $netmask): void;
 
 	abstract public function getGatewayAddress(): string;
 	
