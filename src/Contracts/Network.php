@@ -54,6 +54,10 @@ abstract class Network {
 	 */
 	public static function maskToCIDR(string $netmask): int
 	{
+		// $long = ip2long($netmask);
+		// $base = ip2long("255.255.255.255");
+		// return 32 - log(($long ^ $base) + 1, 2);
+
 		if (self::validNetMask($netmask)) {
 			$ip2long = ip2long($netmask);
 			if ($ip2long === false) {
@@ -171,7 +175,7 @@ abstract class Network {
 
 	abstract public function getGatewayAddress(): string;
 	
-	abstract public function setGatewayAddress(string $gateway): string;
+	abstract public function setGatewayAddress(string $gateway): void;
 
 	abstract public function getMacAddress(): ?string;
 
