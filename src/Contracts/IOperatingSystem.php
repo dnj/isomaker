@@ -1,20 +1,14 @@
 <?php
+
 namespace dnj\IsoMaker\Contracts;
 
-use SplFileObject;
+use dnj\Filesystem\Contracts\IFile;
 
 interface IOperatingSystem
 {
-	public function setName(string $name): void;
+    public function getName(): string;
 
-	public function getName(): string;
+    public function getISOFile(): ?IFile;
 
-	public function setISOFile(SplFileObject $file): void;
-
-	public function getISOFile(): SplFileObject;
-
-	public function setBase(IOperatingSystemBase $base): void;
-
-	public function getBase(): IOperatingSystemBase;
-
+    public function getBitness(): Bitness;
 }

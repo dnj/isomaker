@@ -2,27 +2,37 @@
     "name": "dnj/isomaker",
     "description": "A library for make ISO files customize",
     "type": "library",
-    "authors": [
-        {
-            "name": "JeyServer LTD",
-            "email": "info@jeyserver.com"
-        }
-    ],
+    "license": "MIT",
     "autoload": {
         "psr-4": {
             "dnj\\IsoMaker\\": "src"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "dnj\\IsoMaker\\tests\\": "tests"
+        }
+    },
     "require": {
-        "php": "^7.3|^8.0"
+        "php": "^7.4|^8.0",
+        "symfony/process": "^5.1.4",
+        "dnj/tmp-filesystem": "^1.0",
+        "spatie/enum": "^3.9"
     },
     "require-dev": {
-        "phpstan/phpstan": "^0.12.85"
+        "phpstan/phpstan": "^0.12.85",
+        "phpunit/phpunit": "^9.5",
+        "dnj/tmp-filesystem": "^1.0",
+        "friendsofphp/php-cs-fixer": "^3.1"
     },
     "scripts": {
-        "test:types": "./vendor/bin/phpstan analyse --debug --memory-limit 128M",
+        "test:types": "./vendor/bin/phpstan analyse",
+        "test:phpunit": "vendor/bin/phpunit",
+        "test:codestyle": "vendor/bin/php-cs-fixer fix -v --dry-run --stop-on-violation --using-cache=no",
         "test": [
-            "@test:types"
+            "@test:types",
+            "@test:phpunit",
+            "@test:codestyle"
         ]
     }
 }

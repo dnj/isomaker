@@ -1,194 +1,137 @@
 <?php
+
 namespace dnj\IsoMaker;
 
-use SplFileInfo;
-use SplFileObject;
-use DirectoryIterator;
-use InvalidArgumentException;
-use dnj\IsoMaker\Exception;
+use dnj\Filesystem\Contracts\IDirectory;
+use dnj\Filesystem\Contracts\IFile;
+use dnj\Filesystem\Tmp;
+use dnj\IsoMaker\Contracts\ICustomization;
+use dnj\IsoMaker\Contracts\IOperatingSystem;
 use dnj\IsoMaker\Exception\{NotShellAccess};
-use dnj\IsoMaker\Contracts\{ICustomization, IOperatingSystem};
+use InvalidArgumentException;
+use Symfony\Component\Process\Exception\ProcessFailedException;
+use Symfony\Component\Process\ExecutableFinder;
+use Symfony\Component\Process\Process;
 
 abstract class IsoMaker
 {
-	/**
-	 * @var IOperatingSystem $os;
-	 */
-	protected $os;
+    protected IOperatingSystem $os;
 
-	/**
-	 * @var SplFileObject original ISO File which should not modify
-	 */
-	protected $orignalISO;
+    /**
+     * @var array<string,mixed>
+     */
+    protected array $options = [];
 
-	/**
-	 * @var array<string, mixed> $options
-	 */
-	protected $options = [
-		'shell_interface' => 'builtin',
-		'ssh' => null,
-	];
+    /**
+     * @param array<string,mixed> $options
+     */
+    public function __construct(IOperatingSystem $os, array $options = [])
+    {
+        $this->os = $os;
+        $this->options = array_replace_recursive($this->options, $options);
+    }
 
-	/**
-	 * @var bool $shellTest that indicates can execute command
-	 */
-	protected $shellTest = false;
+    /**
+     * Customize a general OS ISO image to make unattend installation and other customization.
+     *
+     * @return IFile[] output iso files that you should mount in your device
+     */
+    abstract public function customize(ICustomization $customization): array;
 
-	/**
-	 * @param IOperatingSystem $os
-	 * @param array<string,mixed> $options
-	 */
-	public function __construct(IOperatingSystem $os, array $options = [])
-	{
-		$this->os = $os;
-		$this->options = array_replace_recursive($this->options, $options);
-		$this->orignalISO = $this->getIsoFile();
-	}
+    /**
+     * Pack a directory into an bootable ISO file.
+     *
+     * @param IFile $iso new ISO
+     */
+    abstract protected function packISO(IDirectory $directory, IFile $iso): void;
 
-	public function getIsoFile(): SplFileObject
-	{
-		return $this->os->getISOFile();
-	}
+    /**
+     * Extract files from ISO to anthor working directory.
+     *
+     * @return IDirectory working directory for changing the files of ISO
+     */
+    protected function unpackISO(IFile $iso): IDirectory
+    {
+        $this->insureCommand('7z');
 
-	/**
-	 * Customize a general OS ISO image to make unattend installation and other customization.
-	 * 
-	 * @param ICustomization $customization
-	 * @return array<SplFileObject> that are iso file you should mount in your device
-	 */
-	public function customizeForCustomization(ICustomization $customization): array
-	{
-		$dir = $this->unpackISO($this->orignalISO);
+        $repo = new Tmp\Directory();
 
-		return $this->applyCustomization($customization, $dir);
-	}
+        // there is NO SPACE between -o and the media path
+        $this->runCommand(['7z', 'x', '-y', $iso->getPath(), '-o'.$repo->getRealPath()]);
 
-	/**
-	 * Pack a directory into an bootable ISO file.
-	 * 
-	 * @abstract
-	 * @param DirectoryIterator $directory
-	 * @param SplFileInfo $iso new ISO
-	 * @return void 
-	 */
-	abstract protected function packISO(DirectoryIterator $directory, SplFileInfo $iso): void;
+        if ($repo->isEmpty()) {
+            throw new Exception('something is wrong in extract iso: '.$iso->getPath());
+        }
 
-	/**
-	 * Apply changes to a unpacked ISO
-	 * 
-	 * @abstract
-	 * @param ICustomization $customization
-	 * @param DirectoryIterator $directory
-	 * @return void
-	 */
-	abstract protected function applyCustomization(ICustomization $customization, DirectoryIterator $directory): void;
+        return $repo;
+    }
 
-	/**
-	 * Extract files from ISO to anthor working directory.
-	 * 
-	 * @param SplFileObject $iso
-	 * @throws NotShellAccess if shell_exec() function is disabled
-	 * @return DirectoryIterator working directory for changing the files of ISO
-	 */
-	protected function unpackISO(SplFileObject $iso): DirectoryIterator {
-		$chars = "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM123456789";
-		$sysTempDir = sys_get_temp_dir();
-		do {
-			$dirPath = $sysTempDir . '/' . substr(str_shuffle($chars), 0, rand(5,10));
+    /**
+     * Get filesystem label from ISO file using isoinfo command.
+     *
+     * @param IFile $file ISO file
+     *
+     * @throws InvalidArgumentException if given IFile $file is not file
+     * @throws Exception                if cannot find isoinfo command using which command
+     * @throws Exception                cannot find ISO label
+     *
+     * @return string filesystem label
+     */
+    protected function getISOLabel(IFile $file): string
+    {
+        if (!$file->exists()) {
+            throw new InvalidArgumentException('The passed file is not file!');
+        }
+        $this->insureCommand('isoinfo');
+        $result = $this->runCommand(['isoinfo', '-d', '-i', $file->getPath()]);
 
-		} while(is_dir($dirPath));
+        if (!preg_match("/Volume id:\s+(.+)\s*/im", $result, $matches)) {
+            throw new Exception('cannot find ISO label');
+        }
 
-		mkdir($dirPath, 0777, true);
-		$repo = new DirectoryIterator($dirPath);
+        return $matches[1];
+    }
 
-		$this->insureCommand("7z");
-		// there is NO SPACE between -o and the media path
-		$this->runCommand("7z x -y " . $iso->getRealPath() . " -o" . $repo->getRealPath() . "/ 2>&1");
+    /**
+     * Implant an MD5 checksum in an ISO9660 image.
+     *
+     * @param IFile $file ISO file
+     *
+     * @throws Exception if cannot find implantisomd5 command using which command
+     */
+    protected function ISOmd5(IFile $file): void
+    {
+        $this->insureCommand('implantisomd5');
+        $this->runCommand(['implantisomd5', '--force', $file->getPath()]);
+    }
 
-		$isEmpty = true;
-		foreach ($repo as $item) {
-			if ($item->isDot()) {
-				continue;
-			}
-			$isEmpty = false;
-			break;
-		}
-		if ($isEmpty) {
-			throw new Exception("something is wrong in extract iso: " . $iso->getRealPath());
-		}
+    /**
+     * Insure existice of a command in ENV.
+     *
+     * @throws Exception if cannot find the command
+     */
+    protected function insureCommand(string $command): void
+    {
+        $finder = new ExecutableFinder();
+        if (!$finder->find($command)) {
+            throw new Exception("Cannot find executable for {$command}");
+        }
+    }
 
-		return $repo;
-	}
+    /**
+     * Run Command on local server and return the result.
+     *
+     * @param string[] $cmd command to execute
+     *
+     * @throws ProcessFailedException if the process didn't terminate successfully
+     *
+     * @return string result of command
+     */
+    protected function runCommand(array $cmd): string
+    {
+        $process = new Process($cmd);
+        $process->mustRun();
 
-	/**
-	 * Get filesystem label from ISO file using isoinfo command.
-	 * 
-	 * @param SplFileInfo $file ISO file
-	 * @throws InvalidArgumentException if given SplFileInfo $file is not file
-	 * @throws Exception if cannot find isoinfo command using which command
-	 * @throws Exception cannot find ISO label
-	 * @return string filesystem label
-	 */
-	protected function getISOLabel(SplFileInfo $file): string {
-		if (!$file->isFile()) {
-			throw new InvalidArgumentException('The passed SplFileInfo is not file!');
-		}
-		$this->insureCommand("isoinfo");
-		$result = $this->runCommand("isoinfo -d -i " . $file->getRealPath());
-
-		if (!preg_match("/Volume id:\s+(.+)\s*/im", $result, $matches)) {
-			throw new Exception("cannot find ISO label");
-		}
-		return $matches[1];
-	}
-
-	/**
-	 * Implant an MD5 checksum in an ISO9660 image
-	 * 
-	 * @param SplFileObject $file ISO file
-	 * @throws Exception if cannot find implantisomd5 command using which command
-	 * @return void
-	 */
-	protected function ISOmd5(SplFileObject $file): void {
-		$this->insureCommand("implantisomd5");
-		$this->runCommand("implantisomd5 " . $file->getRealPath());
-	}
-
-	/**
-	 * Insure existice of a command in ENV.
-	 * 
-	 * @param string $command
-	 * @throws Exception if cannot find the command.
-	 * @return void
-	 */
-	protected function insureCommand(string $command): void
-	{
-		$result = $this->runCommand("which {$command}");
-		if (!$result or stripos($result, "not found") !== false) {
-			throw new Exception($result);
-		}
-	}
-
-	/**
-	 * Run Command on local server and return the result.
-	 * Please note that the commands may run using SSH or shell_exec() function.
-	 * 
-	 * @param string $cmd command to execute
-	 * @throws NotShellAccess if shell_interface was "builtin" and shell_exec() function is disabled
-	 * @return string result of command
-	 */
-	protected function runCommand(string $cmd): string
-	{
-		$result = null;
-		if ($this->options['shell_interface'] == "builtin") {
-			if (!$this->shellTest and !function_exists('shell_exec')) {
-				throw new NotShellAccess();
-			}
-			$this->shellTest = true;
-			$result = shell_exec($cmd);
-		} elseif ($this->options['shell_interface'] == "ssh") {
-			$result = $this->options['ssh']->execute($cmd);
-		}
-		return (string)$result;
-	}
+        return $process->getOutput();
+    }
 }
