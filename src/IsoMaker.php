@@ -9,12 +9,16 @@ use dnj\IsoMaker\Contracts\ICustomization;
 use dnj\IsoMaker\Contracts\IOperatingSystem;
 use dnj\IsoMaker\Exception\{NotShellAccess};
 use InvalidArgumentException;
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerAwareTrait;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
-abstract class IsoMaker
+abstract class IsoMaker implements LoggerAwareInterface
 {
+    use LoggerAwareTrait;
+
     protected IOperatingSystem $os;
 
     /**
@@ -52,6 +56,7 @@ abstract class IsoMaker
      */
     protected function unpackISO(IFile $iso): IDirectory
     {
+        $this->logger->debug('unpacking iso: '.$iso->getPath());
         $this->insureCommand('7z');
 
         $repo = new Tmp\Directory();
@@ -101,6 +106,7 @@ abstract class IsoMaker
      */
     protected function ISOmd5(IFile $file): void
     {
+        $this->logger->debug('implantisomd5 iso: '.$file->getPath());
         $this->insureCommand('implantisomd5');
         $this->runCommand(['implantisomd5', '--force', $file->getPath()]);
     }
@@ -129,6 +135,7 @@ abstract class IsoMaker
      */
     protected function runCommand(array $cmd): string
     {
+        $this->logger->debug('running command ', $cmd);
         $process = new Process($cmd);
         $process->mustRun();
 
