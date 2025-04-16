@@ -28,6 +28,6 @@ jobs:
       uses: php-actions/phpstan@v2
       with:
         command: analyse
-        configuration: phpstan.neon.dist
+        configuration: phpstan.dist.neon
         memory_limit: 128M
         php_version: 8.0
