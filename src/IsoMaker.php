@@ -22,12 +22,12 @@ abstract class IsoMaker implements LoggerAwareInterface
     protected IOperatingSystem $os;
 
     /**
-     * @var array<string,mixed>
+     * @var array<array-key,mixed>
      */
     protected array $options = [];
 
     /**
-     * @param array<string,mixed> $options
+     * @param array<array-key,mixed> $options
      */
     public function __construct(IOperatingSystem $os, array $options = [])
     {
@@ -56,7 +56,7 @@ abstract class IsoMaker implements LoggerAwareInterface
      */
     protected function unpackISO(IFile $iso): IDirectory
     {
-        $this->logger->debug('unpacking iso: '.$iso->getPath());
+        $this->logger?->debug('unpacking iso: '.$iso->getPath());
         $this->insureCommand('7z');
 
         $repo = new Tmp\Directory();
@@ -106,7 +106,7 @@ abstract class IsoMaker implements LoggerAwareInterface
      */
     protected function ISOmd5(IFile $file): void
     {
-        $this->logger->debug('implantisomd5 iso: '.$file->getPath());
+        $this->logger?->debug('implantisomd5 iso: '.$file->getPath());
         $this->insureCommand('implantisomd5');
         $this->runCommand(['implantisomd5', '--force', $file->getPath()]);
     }
@@ -135,7 +135,7 @@ abstract class IsoMaker implements LoggerAwareInterface
      */
     protected function runCommand(array $cmd): string
     {
-        $this->logger->debug('running command ', $cmd);
+        $this->logger?->debug('running command ', $cmd);
         $process = new Process($cmd);
         $process->mustRun();
 
